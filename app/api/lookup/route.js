@@ -17,8 +17,9 @@ export async function POST(request) {
     const cleaned = address.trim();
 
     // Validate BTC address (legacy 1..., P2SH 3..., segwit bc1q..., taproot bc1p...)
-    const btcRegex = /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,62}$/;
-    if (!btcRegex.test(cleaned)) {
+    const legacyRegex = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
+    const bech32Regex = /^bc1[a-zA-HJ-NP-Z0-9]{6,87}$/;
+    if (!legacyRegex.test(cleaned) && !bech32Regex.test(cleaned)) {
       return Response.json(
         { error: "Invalid Bitcoin address format" },
         { status: 400 }
