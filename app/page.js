@@ -103,6 +103,27 @@ function PaperCard({ data, cardRef, hideBalance }) {
         </div>
       </div>
 
+      {/* Stats grid */}
+      <div style={{
+        display: "grid", gridTemplateColumns: data.lastSold ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr",
+        borderTop: "1px solid #141420", borderBottom: "1px solid #141420",
+      }}>
+        {[
+          { l: "HOLDING SINCE", v: fmtDate(data.firstReceive), c: "#ccc" },
+          { l: "STACK SIZE", v: hideBalance ? "•••••" : fmtBtc(data.currentBalance) + " BTC", c: "#ccc" },
+          { l: "CURRENT VALUE", v: hideBalance ? "•••••" : fmtUsd(data.currentBalance * data.btcPrice), c: "#ef4444" },
+          ...(data.lastSold ? [{ l: "LAST SOLD", v: fmtDate(data.lastSold), c: "#ef4444" }] : []),
+        ].map((s, i, arr) => (
+          <div key={s.l} style={{
+            padding: "16px 14px", textAlign: "center",
+            borderRight: i < arr.length - 1 ? "1px solid #141420" : "none",
+          }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#5a5a6f", letterSpacing: "0.1em", marginBottom: 6 }}>{s.l}</div>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 700, color: s.c }}>{s.v}</div>
+          </div>
+        ))}
+      </div>
+
       <div style={{
         padding: "12px 24px", borderTop: "1px solid #141420",
         display: "flex", justifyContent: "space-between", alignItems: "center",
