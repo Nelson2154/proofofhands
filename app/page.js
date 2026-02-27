@@ -388,7 +388,7 @@ export default function ProofOfHands() {
           <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
             {[
               { l: "Satoshi 👑", a: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" },
-              { l: "Saylor 🏢", a: "bc1qazcm763858nkj2dz7g6xhpfrxjcda3q3pthys" },
+              { l: "Binance 🏦", a: "34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo" },
             ].map(d => (
               <button key={d.l} onClick={() => setAddress(d.a)} style={{
                 background: "#0a0a12", border: "1px solid #1e1e2e", borderRadius: 6,
