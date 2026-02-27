@@ -15,13 +15,12 @@ function getRank(holdDays, everSold) {
 }
 
 function fmtHoldTime(days) {
+  if (days < 365) return { big: days, unit: days === 1 ? "DAY" : "DAYS", sub: null };
   const y = Math.floor(days / 365);
   const m = Math.floor((days % 365) / 30);
   const d = days % 30;
-  if (y > 0 && m > 0) return { big: y, unit: y === 1 ? "YEAR" : "YEARS", sub: `${m}mo ${d}d` };
-  if (y > 0) return { big: y, unit: y === 1 ? "YEAR" : "YEARS", sub: `${d} days` };
-  if (m > 0) return { big: m, unit: m === 1 ? "MONTH" : "MONTHS", sub: `${d} days` };
-  return { big: d, unit: "DAYS", sub: null };
+  if (m > 0) return { big: y, unit: y === 1 ? "YEAR" : "YEARS", sub: `${m}mo ${d}d` };
+  return { big: y, unit: y === 1 ? "YEAR" : "YEARS", sub: `${d} days` };
 }
 
 function fmtDate(iso) {
@@ -121,8 +120,8 @@ function PaperCard({ data, cardRef, hideBalance }) {
         padding: "10px 24px", background: "rgba(0,0,0,0.4)",
         display: "flex", justifyContent: "space-between",
       }}>
-        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: "#3a3a4f" }}>proofofhands.com</span>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#3a3a4f" }}>VERIFIED ON-CHAIN</span>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: "#5a5a6f" }}>proofofhands.com</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#5a5a6f" }}>VERIFIED ON-CHAIN</span>
       </div>
     </div>
   );
@@ -219,8 +218,8 @@ function DiamondCard({ data, cardRef, hideBalance }) {
         padding: "10px 28px", background: "rgba(0,0,0,0.4)",
         display: "flex", justifyContent: "space-between",
       }}>
-        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: "#3a3a4f" }}>proofofhands.com</span>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#3a3a4f" }}>BTC ${data.btcPrice.toLocaleString()}</span>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: "#5a5a6f" }}>proofofhands.com</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#5a5a6f" }}>BTC ${data.btcPrice.toLocaleString()}</span>
       </div>
     </div>
   );
@@ -349,8 +348,15 @@ export default function ProofOfHands() {
         {showDonate && (
           <div style={{ padding: "14px 0", animation: "slideUp 0.2s ease-out" }}>
             <div style={{ background: "#0a0a12", border: "1px solid rgba(247,147,26,0.1)", borderRadius: 10, padding: "14px 18px", textAlign: "center" }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#f7931a", padding: "8px", background: "rgba(247,147,26,0.04)", borderRadius: 6, wordBreak: "break-all", userSelect: "all" }}>
-                bc1qfcc508fy9f356dnej980kv0pfemqd7lrtcharj
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ flex: 1, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#f7931a", padding: "8px", background: "rgba(247,147,26,0.04)", borderRadius: 6, wordBreak: "break-all", userSelect: "all" }}>
+                  bc1qfcc508fy9f356dnej980kv0pfemqd7lrtcharj
+                </div>
+                <button onClick={() => { navigator.clipboard?.writeText("bc1qfcc508fy9f356dnej980kv0pfemqd7lrtcharj"); }} style={{
+                  background: "rgba(247,147,26,0.08)", border: "1px solid rgba(247,147,26,0.15)",
+                  borderRadius: 6, padding: "8px 12px", color: "#f7931a", cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                }}>COPY</button>
               </div>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#5a5a6f", marginTop: 6 }}>Free forever · No ads · No tracking</div>
             </div>
