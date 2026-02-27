@@ -75,8 +75,12 @@ export async function POST(request) {
     } catch {}
 
     // ===== STEP 3: Get OLDEST tx timestamp =====
-    // Strategy: try multiple approaches
-    let firstReceiveTimestamp = null;
+    // Known addresses where pagination can't reach the first tx
+    const KNOWN_FIRST_RECEIVE = {
+      "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa": 1231006505, // Satoshi genesis: Jan 3, 2009
+    };
+
+    let firstReceiveTimestamp = KNOWN_FIRST_RECEIVE[cleaned] || null;
 
     // Approach A: Blockchair (handles any wallet size, returns oldest tx directly)
     try {
