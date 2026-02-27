@@ -1,179 +1,11 @@
 // /app/api/lookup/route.js
-// Primary: Blockstream Esplora API (free, no key, handles all address types)
-// Fallback: blockchain.info
+// Hybrid approach:
+//   - Blockstream Esplora: wallet summary (balance, tx count, received/sent)
+//   - Blockchair: oldest transaction (direct query, no pagination needed)
+//   - blockchain.info: BTC price ticker
 
 export const runtime = "edge";
 
-// ========== BLOCKSTREAM ESPLORA (Primary) ==========
-async function lookupBlockstream(address) {
-  const base = "https://blockstream.info/api";
-
-  // 1. Get address summary
-  const addrRes = await fetch(`${base}/address/${address}`, {
-    signal: AbortSignal.timeout(12000),
-  });
-
-  if (!addrRes.ok) {
-    if (addrRes.status === 400) throw { status: 400, message: "Invalid Bitcoin address" };
-    throw { status: addrRes.status, message: "Address lookup failed" };
-  }
-
-  const addrData = await addrRes.json();
-
-  // Esplora gives us chain_stats (confirmed) and mempool_stats (unconfirmed)
-  const stats = addrData.chain_stats;
-  const totalReceived = stats.funded_txo_sum / 1e8;
-  const totalSent = stats.spent_txo_sum / 1e8;
-  const currentBalance = (stats.funded_txo_sum - stats.spent_txo_sum) / 1e8;
-  const txCount = stats.tx_count;
-
-  if (txCount === 0) {
-    throw { status: 404, message: "Address has no transactions" };
-  }
-
-  // 2. Get transaction list (Esplora returns newest first, 25 per page)
-  // First call gets the most recent txs
-  const txRes = await fetch(`${base}/address/${address}/txs`, {
-    signal: AbortSignal.timeout(12000),
-  });
-
-  if (!txRes.ok) throw { status: 500, message: "Could not load transactions" };
-
-  const txs = await txRes.json();
-
-  // Most recent tx
-  const newestTx = txs[0];
-  const lastActivityTimestamp = newestTx?.status?.block_time || null;
-
-  // 3. Get oldest transaction
-  // Esplora paginates with txs/chain/{last_txid} — we need to walk to the end
-  // For efficiency, if we have <= 25 txs, the oldest is in this first batch
-  let oldestTimestamp = null;
-
-  if (txs.length > 0) {
-    // Check if all txs fit in one page
-    if (txCount <= 25) {
-      const oldest = txs[txs.length - 1];
-      oldestTimestamp = oldest?.status?.block_time || null;
-    } else {
-      // Need to paginate to find the oldest tx
-      // Walk through pages (max 10 pages = 250 txs to avoid timeout)
-      let currentTxs = txs;
-      let lastTxid = currentTxs[currentTxs.length - 1]?.txid;
-      let pages = 0;
-      const maxPages = 15;
-
-      while (currentTxs.length === 25 && pages < maxPages && lastTxid) {
-        try {
-          const nextRes = await fetch(
-            `${base}/address/${address}/txs/chain/${lastTxid}`,
-            { signal: AbortSignal.timeout(8000) }
-          );
-          if (!nextRes.ok) break;
-
-          currentTxs = await nextRes.json();
-          if (currentTxs.length > 0) {
-            lastTxid = currentTxs[currentTxs.length - 1]?.txid;
-          }
-          pages++;
-        } catch {
-          break;
-        }
-      }
-
-      // The last tx in the last page is the oldest
-      if (currentTxs.length > 0) {
-        oldestTimestamp = currentTxs[currentTxs.length - 1]?.status?.block_time || null;
-      }
-    }
-  }
-
-  // If we couldn't paginate all the way, use what we have
-  // (for wallets with 375+ txs that we couldn't fully traverse)
-  if (!oldestTimestamp && txs.length > 0) {
-    // Use the oldest from our first batch as a minimum estimate
-    oldestTimestamp = txs[txs.length - 1]?.status?.block_time || null;
-  }
-
-  if (!oldestTimestamp) {
-    throw { status: 500, message: "Could not determine first transaction date" };
-  }
-
-  return {
-    totalReceived,
-    totalSent,
-    currentBalance,
-    txCount,
-    firstReceiveTimestamp: oldestTimestamp,
-    lastActivityTimestamp,
-  };
-}
-
-// ========== BLOCKCHAIN.INFO (Fallback) ==========
-async function lookupBlockchainInfo(address) {
-  const res = await fetch(
-    `https://blockchain.info/rawaddr/${address}?limit=1`,
-    {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(12000),
-    }
-  );
-
-  if (!res.ok) {
-    throw { status: res.status, message: "Blockchain API error" };
-  }
-
-  const data = await res.json();
-
-  const totalReceived = data.total_received / 1e8;
-  const totalSent = data.total_sent / 1e8;
-  const currentBalance = data.final_balance / 1e8;
-  const txCount = data.n_tx;
-
-  if (txCount === 0) {
-    throw { status: 404, message: "Address has no transactions" };
-  }
-
-  const lastActivityTimestamp = data.txs?.[0]?.time || null;
-
-  // Get oldest tx
-  let firstReceiveTimestamp = null;
-
-  if (txCount === 1) {
-    firstReceiveTimestamp = data.txs[0].time;
-  } else {
-    try {
-      const oldRes = await fetch(
-        `https://blockchain.info/rawaddr/${address}?limit=1&offset=${Math.max(0, txCount - 1)}`,
-        {
-          headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(12000),
-        }
-      );
-      if (oldRes.ok) {
-        const oldData = await oldRes.json();
-        if (oldData.txs?.length > 0) {
-          firstReceiveTimestamp = oldData.txs[0].time;
-        }
-      }
-    } catch {}
-  }
-
-  if (!firstReceiveTimestamp) {
-    throw { status: 500, message: "Could not determine first transaction date" };
-  }
-
-  return {
-    totalReceived,
-    totalSent,
-    currentBalance,
-    txCount,
-    firstReceiveTimestamp,
-    lastActivityTimestamp,
-  };
-}
-
-// ========== MAIN HANDLER ==========
 export async function POST(request) {
   try {
     const { address } = await request.json();
@@ -193,30 +25,139 @@ export async function POST(request) {
       );
     }
 
-    // Try Blockstream first, fall back to blockchain.info
-    let walletData;
-    try {
-      walletData = await lookupBlockstream(cleaned);
-    } catch (blockstreamErr) {
-      // If Blockstream fails, try blockchain.info
-      try {
-        walletData = await lookupBlockchainInfo(cleaned);
-      } catch (fallbackErr) {
-        // Both failed — return the most useful error
-        const err = blockstreamErr?.message || fallbackErr?.message || "Could not look up address";
-        const status = blockstreamErr?.status || fallbackErr?.status || 500;
-        return Response.json({ error: err }, { status: status === 404 ? 404 : 500 });
+    // ===== STEP 1: Get wallet summary from Blockstream =====
+    const addrRes = await fetch(
+      `https://blockstream.info/api/address/${cleaned}`,
+      { signal: AbortSignal.timeout(12000) }
+    );
+
+    if (!addrRes.ok) {
+      if (addrRes.status === 400) {
+        return Response.json({ error: "Invalid Bitcoin address" }, { status: 400 });
       }
+      return Response.json(
+        { error: "Could not look up address. Try again." },
+        { status: 502 }
+      );
     }
 
-    const {
-      totalReceived,
-      totalSent,
-      currentBalance,
-      txCount,
-      firstReceiveTimestamp,
-      lastActivityTimestamp,
-    } = walletData;
+    const addrData = await addrRes.json();
+    const stats = addrData.chain_stats;
+
+    const totalReceived = stats.funded_txo_sum / 1e8;
+    const totalSent = stats.spent_txo_sum / 1e8;
+    const currentBalance = (stats.funded_txo_sum - stats.spent_txo_sum) / 1e8;
+    const txCount = stats.tx_count;
+
+    if (txCount === 0) {
+      return Response.json(
+        { error: "Address has no transactions" },
+        { status: 404 }
+      );
+    }
+
+    const everSold = totalSent > 0;
+
+    // ===== STEP 2: Get most recent tx from Blockstream =====
+    let lastActivityTimestamp = null;
+    try {
+      const recentRes = await fetch(
+        `https://blockstream.info/api/address/${cleaned}/txs`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (recentRes.ok) {
+        const recentTxs = await recentRes.json();
+        if (recentTxs.length > 0) {
+          lastActivityTimestamp = recentTxs[0]?.status?.block_time || null;
+        }
+      }
+    } catch {}
+
+    // ===== STEP 3: Get OLDEST tx timestamp =====
+    // Strategy: try multiple approaches
+    let firstReceiveTimestamp = null;
+
+    // Approach A: Blockchair (handles any wallet size, returns oldest tx directly)
+    try {
+      const chairRes = await fetch(
+        `https://api.blockchair.com/bitcoin/dashboards/address/${cleaned}?limit=0`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (chairRes.ok) {
+        const chairData = await chairRes.json();
+        const addrInfo = chairData?.data?.[cleaned]?.address;
+        if (addrInfo?.first_seen_receiving) {
+          // Blockchair returns ISO date string
+          firstReceiveTimestamp = Math.floor(
+            new Date(addrInfo.first_seen_receiving).getTime() / 1000
+          );
+        }
+      }
+    } catch {}
+
+    // Approach B: If Blockchair fails, paginate Blockstream (works for < 250 txs)
+    if (!firstReceiveTimestamp) {
+      try {
+        const txRes = await fetch(
+          `https://blockstream.info/api/address/${cleaned}/txs`,
+          { signal: AbortSignal.timeout(10000) }
+        );
+        if (txRes.ok) {
+          let txs = await txRes.json();
+          let lastTxid = txs[txs.length - 1]?.txid;
+          let pages = 0;
+
+          // Walk pages (max 10 = 250 txs)
+          while (txs.length === 25 && pages < 10 && lastTxid) {
+            try {
+              const nextRes = await fetch(
+                `https://blockstream.info/api/address/${cleaned}/txs/chain/${lastTxid}`,
+                { signal: AbortSignal.timeout(8000) }
+              );
+              if (!nextRes.ok) break;
+              txs = await nextRes.json();
+              if (txs.length > 0) {
+                lastTxid = txs[txs.length - 1]?.txid;
+              }
+              pages++;
+            } catch {
+              break;
+            }
+          }
+
+          if (txs.length > 0) {
+            firstReceiveTimestamp =
+              txs[txs.length - 1]?.status?.block_time || null;
+          }
+        }
+      } catch {}
+    }
+
+    // Approach C: blockchain.info as last resort
+    if (!firstReceiveTimestamp) {
+      try {
+        const biRes = await fetch(
+          `https://blockchain.info/rawaddr/${cleaned}?limit=1&offset=${Math.max(0, txCount - 1)}`,
+          {
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(12000),
+          }
+        );
+        if (biRes.ok) {
+          const biData = await biRes.json();
+          if (biData.txs?.length > 0) {
+            firstReceiveTimestamp = biData.txs[0].time;
+          }
+        }
+      } catch {}
+    }
+
+    if (!firstReceiveTimestamp) {
+      return Response.json(
+        { error: "Could not determine when this address first received BTC. Try again." },
+        { status: 500 }
+      );
+    }
 
     const firstReceiveDate = new Date(firstReceiveTimestamp * 1000).toISOString();
     const lastActivityDate = lastActivityTimestamp
@@ -227,9 +168,7 @@ export async function POST(request) {
       (new Date() - new Date(firstReceiveDate)) / (1000 * 60 * 60 * 24)
     );
 
-    const everSold = totalSent > 0;
-
-    // Get BTC price
+    // ===== STEP 4: BTC price =====
     let btcPrice = 84712;
     try {
       const priceRes = await fetch("https://blockchain.info/ticker", {
